@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jenny AI Assistant</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+        }
+        /* Custom scrollbar for the chat area */
+        .chat-messages::-webkit-scrollbar {
+            width: 8px;
+        }
+        .chat-messages::-webkit-scrollbar-track {
+            background: #e2e8f0; /* Light blue-gray track */
+            border-radius: 10px;
+        }
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #94a3b8; /* Darker blue-gray thumb */
+            border-radius: 10px;
+        }
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: #64748b; /* Even darker on hover */
+        }
+        /* Pulse animation for listening state */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        .animate-pulse-custom {
+            animation: pulse 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="bg-white rounded-xl shadow-lg p-6 w-full max-w-md flex flex-col h-[500px]">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">
+            <span class="text-purple-600">Jenny</span> AI Assistant
+        </h1>
+
+        <!-- Chat messages display area -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto bg-gray-50 p-4 rounded-lg mb-4 shadow-inner">
+            <!-- Messages will be appended here -->
+        </div>
+
+        <!-- Input and Voice Activation Area -->
+        <div class="flex flex-col space-y-3">
+            <div class="flex items-center space-x-3">
+                <input
+                    type="text"
+                    id="command-input"
+                    placeholder="Type your command here..."
+                    class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
+                />
+                <button
+                    id="send-button"
+                    class="bg-purple-600 text-white px-5 py-3 rounded-lg font-semibold shadow-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition duration-200"
+                >
+                    Send
+                </button>
+            </div>
+            <button
+                id="voice-button"
+                class="bg-green-500 text-white px-5 py-3 rounded-lg font-semibold shadow-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200 flex items-center justify-center space-x-2"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                    <path d="M12 2C10.34 2 9 3.34 9 5V11C9 12.66 10.34 14 12 14C13.66 14 15 12.66 15 11V5C15 3.34 13.66 2 12 2ZM17 11C17 14.53 14.36 17.44 11 17.93V21H13C13.55 21 14 21.45 14 22C14 22.55 13.55 23 13 23H11C10.45 23 10 22.55 10 22C10 21.45 10.45 21 11 21H13V17.93C9.64 17.44 7 14.53 7 11H5C5 15.08 7.64 18.43 11 19.34V21H13V19.34C16.36 18.43 19 15.08 19 11H17Z" />
+                </svg>
+                <span id="voice-button-text">Listen for "Jenny"</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chat-messages');
+        const commandInput = document.getElementById('command-input');
+        const sendButton = document.getElementById('send-button');
+        const voiceButton = document.getElementById('voice-button');
+        const voiceButtonText = document.getElementById('voice-button-text');
+
+        let isListening = false;
+        let wakeWordDetected = false;
+        let recognition; // Declare recognition globally
+
+        // Check for Web Speech API compatibility
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false; // Listen for a single phrase
+            recognition.interimResults = false; // Only return final results
+            recognition.lang = 'en-IN'; // Set language
+
+            // Event handler for when speech is recognized
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                console.log('Transcript:', transcript);
+                addMessage('user', transcript); // Display what the user said
+
+                if (!wakeWordDetected) {
+                    if (transcript.toLowerCase().includes('jenny')) {
+                        wakeWordDetected = true;
+                        speak("Yes, how can I help?");
+                        voiceButtonText.textContent = "Listening for Command...";
+                        voiceButton.classList.add('animate-pulse-custom', 'bg-blue-500');
+                        voiceButton.classList.remove('bg-green-500', 'hover:bg-green-600');
+                        // Automatically start listening for the command after wake word
+                        setTimeout(() => {
+                            startListening();
+                        }, 500); // Give Jenny a moment to respond
+                    } else {
+                        speak("I'm waiting for the wake word 'Jenny'.");
+                        voiceButtonText.textContent = "Listen for 'Jenny'";
+                        voiceButton.classList.remove('animate-pulse-custom', 'bg-blue-500');
+                        voiceButton.classList.add('bg-green-500', 'hover:bg-green-600');
+                        isListening = false; // Reset listening state
+                    }
+                } else {
+                    // If wake word detected, process the command
+                    processCommand(transcript);
+                    wakeWordDetected = false; // Reset for next interaction
+                    voiceButtonText.textContent = "Listen for 'Jenny'";
+                    voiceButton.classList.remove('animate-pulse-custom', 'bg-blue-500');
+                    voiceButton.classList.add('bg-green-500', 'hover:bg-green-600');
+                    isListening = false; // Reset listening state
+                }
+            };
+
+            // Event handler for when recognition ends (either due to speech or timeout)
+            recognition.onend = () => {
+                if (isListening) {
+                    // If we were actively listening and it ended, restart if wake word not detected
+                    if (!wakeWordDetected) {
+                        console.log("Recognition ended, restarting for wake word.");
+                        startListening(); // Keep listening for wake word
+                    } else {
+                        console.log("Recognition ended after command.");
+                        isListening = false; // Stop listening after a command
+                        voiceButtonText.textContent = "Listen for 'Jenny'";
+                        voiceButton.classList.remove('animate-pulse-custom', 'bg-blue-500');
+                        voiceButton.classList.add('bg-green-500', 'hover:bg-green-600');
+                    }
+                }
+            };
+
+            // Event handler for errors
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                speak("Sorry, I encountered an error with speech recognition. Please try again.");
+                isListening = false;
+                wakeWordDetected = false;
+                voiceButtonText.textContent = "Listen for 'Jenny'";
+                voiceButton.classList.remove('animate-pulse-custom', 'bg-blue-500');
+                voiceButton.classList.add('bg-green-500', 'hover:bg-green-600');
+            };
+
+        } else {
+            // Browser doesn't support Web Speech API
+            voiceButton.disabled = true;
+            voiceButton.textContent = "Voice not supported";
+            voiceButton.classList.remove('bg-green-500');
+            voiceButton.classList.add('bg-gray-400');
+            speak("Your browser does not support the Web Speech API. Please use the text input.");
+        }
+
+        // Function to start speech recognition
+        function startListening() {
+            if (recognition && !isListening) {
+                try {
+                    recognition.start();
+                    isListening = true;
+                    if (!wakeWordDetected) {
+                        voiceButtonText.textContent = "Listening for 'Jenny'...";
+                        voiceButton.classList.add('animate-pulse-custom');
+                    } else {
+                        voiceButtonText.textContent = "Listening for Command...";
+                        voiceButton.classList.add('animate-pulse-custom', 'bg-blue-500');
+                        voiceButton.classList.remove('bg-green-500', 'hover:bg-green-600');
+                    }
+                    console.log("Speech recognition started.");
+                } catch (e) {
+                    console.error("Error starting recognition:", e);
+                    speak("Could not start listening. Please check your microphone permissions.");
+                    isListening = false;
+                    wakeWordDetected = false;
+                    voiceButtonText.textContent = "Listen for 'Jenny'";
+                    voiceButton.classList.remove('animate-pulse-custom', 'bg-blue-500');
+                    voiceButton.classList.add('bg-green-500', 'hover:bg-green-600');
+                }
+            } else if (isListening) {
+                console.log("Already listening.");
+            }
+        }
+
+        // Function to add a message to the chat display
+        function addMessage(sender, text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('mb-3', 'p-3', 'rounded-lg', 'max-w-[80%]', 'relative', 'shadow-sm');
+
+            if (sender === 'user') {
+                messageDiv.classList.add('bg-blue-500', 'text-white', 'ml-auto', 'rounded-br-none');
+            } else {
+                messageDiv.classList.add('bg-gray-200', 'text-gray-800', 'mr-auto', 'rounded-bl-none');
+            }
+
+            // Add sender label for clarity
+            const senderLabel = document.createElement('div');
+            senderLabel.classList.add('text-xs', 'font-medium', 'mb-1', sender === 'user' ? 'text-blue-100' : 'text-gray-600');
+            senderLabel.textContent = sender === 'user' ? 'You' : 'Jenny';
+            messageDiv.appendChild(senderLabel);
+
+            const messageText = document.createElement('p');
+            messageText.textContent = text;
+            messageDiv.appendChild(messageText);
+
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight; // Scroll to bottom
+        }
+
+        // Simulate Jenny speaking
+        function speak(audio) {
+            addMessage('jenny', audio);
+            // In a real application, pyttsx3 would play the audio here.
+            // For this GUI, we just display the text.
+        }
+
+        // Simulate wishMe function
+        function wishMe() {
+            const hour = new Date().getHours();
+            let greeting;
+            if (hour >= 0 && hour < 12) {
+                greeting = "Good Morning! I am Jenny, your personal AI.";
+            } else if (hour >= 12 && hour < 18) {
+                greeting = "Good Afternoon! I am Jenny, your personal AI.";
+            } else {
+                greeting = "Hi! I am Jenny, your personal AI.";
+            }
+            speak(greeting);
+            speak("How can I help you today?");
+        }
+
+        // Simulate takeCommand and run_Jenny logic
+        function processCommand(query) {
+            // No need to addMessage('user', query) here as it's done in onresult
+            commandInput.value = ''; // Clear input after processing
+
+            // Convert query to lowercase for matching
+            const lowerQuery = query.toLowerCase();
+
+            if (lowerQuery.includes('wikipedia')) {
+                speak('Searching Wikipedia...');
+                speak("Wikipedia search is currently disabled or requires the 'wikipedia' library to be installed and accessible.");
+            } else if (lowerQuery.includes('open youtube')) {
+                speak("Opening YouTube for you.");
+                speak("Action simulated: YouTube would open in your browser.");
+            } else if (lowerQuery.includes('search film')) {
+                speak("Opening movie for you.");
+                speak("Action simulated: Cinesubz.lk would open in your browser.");
+            } else if (lowerQuery.includes('open dashboard')) {
+                speak("Opening YouTube Studio dashboard for you.");
+                speak("Action simulated: YouTube Studio would open in your browser.");
+            } else if (lowerQuery.includes('open whatsapp')) {
+                speak("Opening WhatsApp Web for you.");
+                speak("Action simulated: WhatsApp Web would open in your browser.");
+            } else if (lowerQuery.includes('the time')) {
+                const strTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                speak(`Sir, the time is ${strTime}`);
+            } else if (lowerQuery.includes('open code')) {
+                speak("Opening VS Code.");
+                speak("Action simulated: VS Code would open.");
+            } else if (lowerQuery.includes('open chrome')) {
+                speak("Opening Google Chrome.");
+                speak("Action simulated: Google Chrome would open.");
+            } else if (lowerQuery.includes('open notepad')) {
+                speak("Opening Notepad.");
+                speak("Action simulated: Notepad would open.");
+            } else if (lowerQuery.includes('open file explorer') || lowerQuery.includes('open my computer')) {
+                speak("Opening File Explorer.");
+                speak("Action simulated: File Explorer would open.");
+            } else if (lowerQuery.includes('exit') || lowerQuery.includes('quit') || lowerQuery.includes('stop') || lowerQuery.includes('shut up')) {
+                speak("Goodbye, Sir! Have a great day.");
+                commandInput.disabled = true;
+                sendButton.disabled = true;
+                voiceButton.disabled = true;
+                commandInput.placeholder = "Assistant is offline.";
+                voiceButtonText.textContent = "Assistant is offline.";
+                voiceButton.classList.remove('animate-pulse-custom', 'bg-blue-500', 'bg-green-500');
+                voiceButton.classList.add('bg-gray-400');
+                if (isListening) {
+                    recognition.stop();
+                }
+            } else {
+                speak("I didn't understand that command. Can you please repeat?");
+            }
+        }
+
+        // Event listeners
+        sendButton.addEventListener('click', () => {
+            const command = commandInput.value.trim();
+            if (command) {
+                // If using text input, reset wake word state
+                wakeWordDetected = true; // Assume wake word for text input
+                processCommand(command);
+                wakeWordDetected = false; // Reset after processing
+            }
+        });
+
+        commandInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const command = commandInput.value.trim();
+                if (command) {
+                    // If using text input, reset wake word state
+                    wakeWordDetected = true; // Assume wake word for text input
+                    processCommand(command);
+                    wakeWordDetected = false; // Reset after processing
+                }
+            }
+        });
+
+        voiceButton.addEventListener('click', () => {
+            if (!isListening) {
+                wakeWordDetected = false; // Ensure we start by listening for the wake word
+                startListening();
+            } else {
+                recognition.stop(); // Allow stopping manually
+                isListening = false;
+                voiceButtonText.textContent = "Listen for 'Jenny'";
+                voiceButton.classList.remove('animate-pulse-custom', 'bg-blue-500');
+                voiceButton.classList.add('bg-green-500', 'hover:bg-green-600');
+            }
+        });
+
+        // Initial greeting when the page loads
+        window.onload = wishMe;
+    </script>
+</body>
+</html>
